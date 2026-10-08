@@ -13,9 +13,20 @@ ANIMATION_FOR_EVENT = {
     "ui_observed": "think",
     "ui_action": "point",
     "confirm_needed": "perk_up",
+    "confirm_rejected": "confused",
+    "launch_attempt": "walk_to_edge",
+    "ui_replan": "think",
     "path_ready": "celebrate",
     "waiting": "idle_sit",
     "error": "confused",
+    "demo_fallback": "celebrate",
+    "mission_cancelled": "confused",
+    "url_skipped": "think",
+    "resource_missing": "think",
+    "browser_focus_failed": "confused",
+    "command_done": "celebrate",
+    "chat_response": "think",
+    "run_ignored": "confused",
 }
 
 MOOD_FOR_EVENT = {

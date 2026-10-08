@@ -1,7 +1,12 @@
 import { spawn } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
 import { runtimeEnv } from './env.mjs'
 
 const { root, env } = runtimeEnv()
+// Mint a fresh credential per launcher session; never put it in .env or a checked-in file.
+const launchToken = randomBytes(32).toString('hex')
+env.REBORN_TOKEN = launchToken
+env.VITE_REBORN_TOKEN = launchToken
 
 const backend = spawn(process.execPath, ['scripts/backend.mjs'], {
   cwd: root,
@@ -9,9 +14,16 @@ const backend = spawn(process.execPath, ['scripts/backend.mjs'], {
   stdio: 'inherit',
 })
 
+const widgetEnv = { ...env }
+// The widget only needs VITE-prefixed public settings plus its launch token; do not copy server
+// credentials into Electron's process environment where renderer tooling can inspect them.
+for (const secretName of ['GROQ_API_KEY', 'SUPABASE_SERVICE_ROLE_KEY']) {
+  delete widgetEnv[secretName]
+}
+
 const widget = spawn('npm run dev --prefix widget', {
   cwd: root,
-  env,
+  env: widgetEnv,
   stdio: 'inherit',
   shell: true,
 })

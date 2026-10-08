@@ -1,4 +1,4 @@
-"""Playwright fallback when UIA cannot drive the browser. One shared context."""
+"""Optional Playwright URL fallback; disabled by default because sync Playwright is thread-bound."""
 
 from __future__ import annotations
 

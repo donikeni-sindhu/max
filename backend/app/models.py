@@ -13,6 +13,7 @@ MissionStatus = Literal[
     "learning",
     "complete",
     "failed",
+    "cancelled",
 ]
 ConceptStatus = Literal["pending", "active", "done"]
 ConceptLevel = Literal[1, 2, 3]
@@ -77,6 +78,8 @@ class WorldStateData(BaseModel):
     resources: list[WorldResource] = Field(default_factory=list)
     ui_summary: UiSummary = Field(default_factory=UiSummary)
     summary: MissionSummary | None = None
+    # Confirmation is mission state so observer events cannot hide the active approval prompt.
+    pending_confirmation: str | None = None
 
 
 class Profile(BaseModel):

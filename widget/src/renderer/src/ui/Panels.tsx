@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { WorldStateData } from '../types/database'
-import { confirmMission, nextConcept, type MissionBundle } from '../lib/api'
+import { confirmMission, nextConcept, readSnapshot, type MissionBundle } from '../lib/api'
 
 export function ResearchPath({
   bundle,
@@ -14,27 +14,45 @@ export function ResearchPath({
   const state = bundle.world_state?.state
   const summary = state?.summary
   const latest = bundle.events.at(-1)
+  const hasLearningPath = bundle.concepts.length > 0
+  const actionLog = bundle.events.filter((event) =>
+    ['goal_detected', 'ui_observed', 'ui_action', 'ui_replan', 'launch_attempt', 'app_opened', 'confirm_rejected', 'command_done', 'chat_response', 'error', 'mission_cancelled'].includes(event.type),
+  )
+  const chatResponse = [...bundle.events].reverse().find((event) => event.type === 'chat_response')
 
   return (
     <section className="panel" data-interactive="true">
       <header>
-        <strong>{bundle.mission.target_title ?? 'Research path'}</strong>
+        <strong>{bundle.mission.target_title ?? (hasLearningPath ? 'Research path' : 'Assistant')}</strong>
         <span className="chip">{latest?.message ?? bundle.mission.status}</span>
       </header>
-      <ol className="path">
-        {bundle.concepts.map((concept, index) => (
-          <li key={concept.id} className={concept.status}>
-            {index > 0 ? <span className="arrow">↓</span> : null}
-            <span>
-              {concept.name}
-              <small> level {concept.level}</small>
-            </span>
-          </li>
-        ))}
-      </ol>
-      <button type="button" onClick={onNext}>
-        Start next concept
-      </button>
+      {hasLearningPath ? (
+        <>
+          <ol className="path">
+            {bundle.concepts.map((concept, index) => (
+              <li key={concept.id} className={concept.status}>
+                {index > 0 ? <span className="arrow">↓</span> : null}
+                <span>
+                  {concept.name}
+                  <small> level {concept.level}</small>
+                </span>
+              </li>
+            ))}
+          </ol>
+          <button type="button" onClick={onNext}>
+            Start next concept
+          </button>
+        </>
+      ) : null}
+      {actionLog.length ? (
+        // The event feed is polled while a command runs so users can see each observation and action result.
+        <ol className="action-log" aria-live="polite">
+          {actionLog.slice(-8).map((event) => (
+            <li key={event.id}>{event.message}</li>
+          ))}
+        </ol>
+      ) : null}
+      {chatResponse ? <p className="command-result">{chatResponse.message}</p> : null}
       <button type="button" className="ghost" onClick={() => setOpenState((value) => !value)}>
         {openState ? 'Hide world state' : 'World state'}
       </button>
@@ -71,9 +89,8 @@ function WorldStateView({ state }: { state: WorldStateData }) {
 function DebugLog({ bundle }: { bundle: MissionBundle }) {
   const [compact, setCompact] = useState('')
   useEffect(() => {
-    void fetch(`${import.meta.env.VITE_BACKEND_URL ?? 'http://127.0.0.1:8000'}/debug/uia/snapshot`)
-      .then((response) => response.json())
-      .then((body: { compact?: string }) => setCompact(body.compact ?? ''))
+    void readSnapshot()
+      .then((body) => setCompact(body.compact ?? ''))
       .catch(() => setCompact(''))
   }, [bundle.events.length])
   return (

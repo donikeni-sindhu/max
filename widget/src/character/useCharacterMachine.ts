@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useReducer } from 'react'
+import { apiFetch } from '../renderer/src/lib/api'
 import {
   IDLE_FAMILY,
   LONG_RESEARCH_MS,
@@ -263,7 +264,7 @@ export function useCharacterMachine(remote: LiveCharacter | null) {
     const base = import.meta.env.VITE_BACKEND_URL || 'http://127.0.0.1:8000'
     let stop = false
     const ping = () => {
-      fetch(`${base}/health`)
+      apiFetch(`${base}/health`)
         .then((response) => {
           if (!stop) dispatch({ type: 'offline', value: !response.ok })
         })

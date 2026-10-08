@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import copy
+import logging
+import re
 from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID, uuid4
@@ -22,6 +24,7 @@ _memory: dict[str, Any] = {
 _client: Any = None
 _use_memory = False
 _probed = False
+_logger = logging.getLogger(__name__)
 
 
 def _now() -> str:
@@ -170,10 +173,14 @@ def replace_concepts(mission_id: UUID, concepts: list[dict[str, Any]]) -> list[d
 def replace_resources(mission_id: UUID, resources: list[dict[str, Any]]) -> list[dict[str, Any]]:
     key = str(mission_id)
     bundle = get_bundle(mission_id)
-    by_name = {row["name"]: row["id"] for row in (bundle or {}).get("concepts", [])}
+    # Normalize whitespace and case because model-generated concept names may differ only in formatting.
+    by_name = {re.sub(r"\s+", " ", str(row["name"])).strip().casefold(): row["id"] for row in (bundle or {}).get("concepts", [])}
     rows = []
     for resource in resources:
-        concept_id = resource.get("concept_id") or by_name.get(resource.get("concept_name"))
+        normalized_name = re.sub(r"\s+", " ", str(resource.get("concept_name") or "")).strip().casefold()
+        concept_id = resource.get("concept_id") or by_name.get(normalized_name)
+        if normalized_name and concept_id is None:
+            _logger.warning("Could not link resource %r to a concept in mission %s", resource.get("title"), key)
         rows.append(
             {
                 "id": str(uuid4()),

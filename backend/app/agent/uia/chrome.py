@@ -6,12 +6,13 @@ import os
 import subprocess
 import time
 from typing import Any
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlsplit
 from xml.etree import ElementTree
 
 import httpx
 
 from app.agent.demo_data import PAPER_PDF
+from app.agent import mission_control
 from app.agent.uia import actions, snapshot
 
 _paper_tab = ""
@@ -44,7 +45,8 @@ def _chrome_hwnd() -> int:
     fallback: list[int] = []
 
     def visit(handle: int, _: object) -> None:
-        if not win32gui.IsWindowVisible(handle):
+        # A cloaked Chrome window may pass IsWindowVisible but cannot receive input on the current desktop.
+        if not snapshot.is_window_visible(handle):
             return
         title = win32gui.GetWindowText(handle)
         if not title or "reborn" in title.lower():
@@ -93,13 +95,24 @@ def profile_dir() -> str:
     return root
 
 
-def launch_chrome(url: str | None = None) -> dict[str, Any]:
+def launch_chrome(url: str | None = None, mission_id: Any = None) -> dict[str, Any]:
+    """Start the dedicated Chrome profile and report success only when its window is visible."""
+
+    # Check cancellation immediately before process launch because this is an irreversible browser side effect.
+    if mission_id is not None and mission_control.is_cancelled(mission_id):
+        return {"ok": False, "detail": "Mission was cancelled", "url": url}
+    if url:
+        parsed = urlsplit(url)
+        if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
+            return {"ok": False, "detail": "Only HTTP and HTTPS URLs can be opened", "url": url}
     path = chrome_path()
     if not path:
         return {"ok": False, "detail": "Chrome is not installed"}
     command = [
         path,
         "--force-renderer-accessibility",
+        "--no-first-run",
+        "--no-default-browser-check",
         f"--user-data-dir={profile_dir()}",
     ]
     if url:
@@ -108,10 +121,22 @@ def launch_chrome(url: str | None = None) -> dict[str, Any]:
         before = str(_chrome_window().get("title") or "")
         subprocess.Popen(command)
         title = _wait_title(before) if url else before
+        if url and title is None:
+            window = _chrome_window()
+            detail = (
+                f"Chrome did not create a visible window for {url}"
+                if not window.get("hwnd")
+                else f"Timed out waiting for {url} to load"
+            )
+            return {"ok": False, "detail": detail, "url": url}
         if url:
-            _remember(title or url, url)
+            _remember(title, url)
         time.sleep(0.4)
-        return {"ok": _chrome_hwnd() != 0, "detail": "Launched Chrome", "url": url, "tab": title}
+        window = _chrome_window()
+        if not window.get("hwnd"):
+            return {"ok": False, "detail": "Chrome did not create a visible window", "url": url}
+        evidence = {key: window.get(key) for key in ("title", "process", "hwnd")}
+        return {"ok": True, "detail": "Launched Chrome", "url": url, "tab": title, "evidence": evidence}
     except Exception as exc:
         return {"ok": False, "detail": str(exc)}
 
@@ -120,7 +145,7 @@ def _remember(name: str, url: str) -> None:
     _opened.append({"name": name, "url": url})
 
 
-def _wait_title(previous: str) -> str:
+def _wait_title(previous: str) -> str | None:
     deadline = time.monotonic() + 8
     title = previous
     while time.monotonic() < deadline:
@@ -128,14 +153,15 @@ def _wait_title(previous: str) -> str:
         if title and title != previous and "New Tab" not in title:
             return title
         time.sleep(0.4)
-    return title
+    # A timeout is a failed navigation, not evidence that a page is ready for the next action.
+    return None
 
 
 def list_tabs() -> list[dict[str, str]]:
-    elements = snapshot.capture_tree(_chrome_window())
+    observed = snapshot.capture_tree(_chrome_window())
     visible = [
         {"name": element["name"], "id": element["id"]}
-        for element in elements
+        for element in observed.elements
         if element["control_type"] == "TabItem" and element["name"]
     ]
     if visible:
@@ -144,64 +170,80 @@ def list_tabs() -> list[dict[str, str]]:
 
 
 def get_address_bar_url() -> str:
-    elements = snapshot.capture_tree(_chrome_window())
-    for element in elements:
+    observed = snapshot.capture_tree(_chrome_window())
+    for element in observed.elements:
         if element["control_type"] == "Edit" and "address" in element["name"].lower():
             return str(element.get("value") or "")
     return ""
 
 
-def focus_tab(name: str) -> dict[str, Any]:
+def focus_tab(name: str, mission_id: Any = None) -> dict[str, Any]:
     window = _chrome_window()
     if not window["hwnd"]:
         return {"ok": False, "detail": "Chrome is not open"}
-    focused = actions.focus_hwnd(int(window["hwnd"]))
+    focused = actions.focus_hwnd(int(window["hwnd"]), mission_id)
     if not focused["ok"]:
         return focused
-    elements = snapshot.capture_tree(window)
+    observed = snapshot.capture_tree(window)
     match = next(
         (
             element
-            for element in elements
+            for element in observed.elements
             if element["control_type"] == "TabItem" and name.lower() in element["name"].lower()
         ),
         None,
     )
     if match is not None:
-        return actions.click(match["id"])
+        return actions.click(match["id"], mission_id, str(match["name"]), observed)
     wanted = name.lower()
     for _ in range(12):
         current = str(_chrome_window().get("title") or "")
         if wanted in current.lower() or current.lower() in wanted:
             return {"ok": True, "detail": f"Focused {current}"}
-        actions.press_keys("^{TAB}", process_name="chrome.exe")
+        actions.press_keys("^{TAB}", mission_id=mission_id, process_name="chrome.exe", observed=observed)
         time.sleep(0.35)
     return {"ok": False, "detail": f"Tab not found: {name}"}
 
 
-def open_url(url: str) -> dict[str, Any]:
+def open_url(url: str, mission_id: Any = None) -> dict[str, Any]:
+    parsed = urlsplit(url)
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
+        return {"ok": False, "detail": "Only HTTP and HTTPS URLs can be opened", "url": url}
+    # Reserve each destination before touching Chrome so repeat steps and concurrent workers cannot reopen it.
+    allowed, detail = mission_control.reserve_url(mission_id, url)
+    if not allowed:
+        return {"ok": False, "detail": detail, "url": url, "skipped": "already opened" in detail}
     previous = str(_chrome_window().get("title") or "")
     window = _chrome_window()
     opened_by_keys = False
-    if window["hwnd"] and actions.focus_hwnd(int(window["hwnd"]))["ok"]:
-        pressed = actions.press_keys("^l", process_name="chrome.exe")
-        elements = snapshot.capture_tree(_chrome_window()) if pressed["ok"] else []
+    if window["hwnd"] and actions.focus_hwnd(int(window["hwnd"]), mission_id)["ok"]:
+        before_action = snapshot.capture_tree(_chrome_window())
+        pressed = actions.press_keys("^l", mission_id=mission_id, process_name="chrome.exe", observed=before_action)
+        observed = snapshot.capture_tree(_chrome_window()) if pressed["ok"] else None
         address = next(
             (
                 element
-                for element in elements
+                for element in (observed.elements if observed else ())
                 if element["control_type"] == "Edit" and "address" in element["name"].lower()
             ),
             None,
         )
         if address:
-            typed = actions.type_text(address["id"], url, human_delay=True)
+            typed = actions.type_text(
+                address["id"], url, human_delay=True, mission_id=mission_id,
+                expected_name=str(address["name"]), observed=observed,
+            )
             if typed["ok"]:
-                actions.press_keys("{ENTER}", process_name="chrome.exe")
-                opened_by_keys = True
+                submitted = actions.press_keys(
+                    "{ENTER}", mission_id=mission_id, process_name="chrome.exe", observed=observed,
+                )
+                opened_by_keys = bool(submitted["ok"])
     if not opened_by_keys:
-        return launch_chrome(url)
+        # Launching a new Chrome process is the single fallback route; do not retry this URL in another browser.
+        return launch_chrome(url, mission_id)
     title = _wait_title(previous)
+    if title is None:
+        return {"ok": False, "detail": f"Timed out waiting for {url} to load", "url": url}
     if _opened:
         _opened[-1] = {"name": title or url, "url": url}
     else:
@@ -209,15 +251,15 @@ def open_url(url: str) -> dict[str, Any]:
     return {"ok": True, "detail": f"Opened {url}", "tab": title, "url": url}
 
 
-def search(query: str) -> dict[str, Any]:
+def search(query: str, mission_id: Any = None) -> dict[str, Any]:
     url = f"https://duckduckgo.com/?q={quote_plus(query)}"
-    opened = open_url(url)
+    opened = open_url(url, mission_id)
     if not opened["ok"]:
         return {**opened, "results": []}
     time.sleep(1.5)
-    elements = snapshot.capture_tree(_chrome_window())
+    observed = snapshot.capture_tree(_chrome_window())
     results: list[dict[str, str]] = []
-    for element in elements:
+    for element in observed.elements:
         if element["control_type"] != "Hyperlink":
             continue
         name = element["name"].strip()
@@ -296,30 +338,21 @@ def _arxiv_pdf_url(title: str) -> str:
     return ""
 
 
-def open_paper_pdf(title: str) -> dict[str, Any]:
+def open_paper_pdf(title: str, mission_id: Any = None) -> dict[str, Any]:
     global _paper_tab
-    query = quote_plus(title)
-    open_url(f"https://arxiv.org/search/?query={query}&searchtype=all&source=header")
-    elements = snapshot.capture_tree(_chrome_window())
-    pdf_link = next(
-        (
-            element
-            for element in elements
-            if element["control_type"] == "Hyperlink" and "pdf" in element["name"].lower()
-        ),
-        None,
-    )
-    if pdf_link is not None:
-        actions.click(pdf_link["id"])
-        time.sleep(1.5)
-    pdf_url = _arxiv_pdf_url(title) or PAPER_PDF
-    opened = open_url(pdf_url)
+    # Resolve the paper URL first so one mission does not open both a search page and its PDF.
+    pdf_url = _arxiv_pdf_url(title)
+    if not pdf_url:
+        return {"ok": False, "detail": f"Could not find an arXiv PDF for {title}", "title": title}
+    opened = open_url(pdf_url, mission_id)
+    if not opened.get("ok"):
+        return {**opened, "title": title, "url": pdf_url}
     _paper_tab = str(opened.get("tab") or title)
     return {"ok": True, "detail": f"Paper tab {_paper_tab}", "url": pdf_url, "tab": _paper_tab, "title": title}
 
 
-def open_resource(url: str, name: str) -> dict[str, Any]:
-    opened = open_url(url)
+def open_resource(url: str, name: str, mission_id: Any = None) -> dict[str, Any]:
+    opened = open_url(url, mission_id)
     if opened.get("ok") and _opened:
         _opened[-1]["name"] = name
     return {**opened, "name": name}

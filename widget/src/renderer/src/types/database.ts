@@ -5,6 +5,7 @@ export type MissionStatus =
   | 'learning'
   | 'complete'
   | 'failed'
+  | 'cancelled'
 
 export type ConceptStatus = 'pending' | 'active' | 'done'
 export type ConceptLevel = 1 | 2 | 3
@@ -67,6 +68,7 @@ export type WorldStateData = {
   resources: WorldResource[]
   ui_summary?: UiSummary
   summary?: MissionSummary | null
+  pending_confirmation?: string | null
 }
 
 export type Profile = {

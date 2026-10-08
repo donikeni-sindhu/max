@@ -5,9 +5,10 @@ import { AnimationTester } from '../../dev/AnimationTester'
 import { BASE_FPS } from '../../character/animations.config'
 import { useCharacterState } from './hooks/useCharacterState'
 import { useMission } from './hooks/useMission'
-import { createMission, DEMO_GOAL, replayMission } from './lib/api'
+import { cancelMission, createMission, DEMO_GOAL, executeCommand, listAppApprovals, replayMission, revokeAppApproval } from './lib/api'
 import { signInAnonymously } from './lib/supabase'
-import { chooseConfirm, ResearchPath, Speech, startNext } from './ui/Panels'
+import { chooseConfirm, ConfirmDialog, ResearchPath, Speech, startNext } from './ui/Panels'
+import { isInteractiveTarget } from './ui/pointerTarget.mjs'
 
 export function App() {
   const [userId, setUserId] = useState<string | null>(null)
@@ -15,7 +16,10 @@ export function App() {
   const [asking, setAsking] = useState(false)
   const [goal, setGoal] = useState('')
   const [menu, setMenu] = useState(false)
+  const [manageApps, setManageApps] = useState(false)
+  const [approvedApps, setApprovedApps] = useState<string[]>([])
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
   const { bundle } = useMission(missionId)
   const remote = useCharacterState(
     userId,
@@ -32,7 +36,7 @@ export function App() {
   useEffect(() => {
     const onMove = (event: MouseEvent) => {
       const hit = document.elementFromPoint(event.clientX, event.clientY)
-      window.reborn?.setInteractive?.(Boolean(hit?.closest('[data-interactive]')))
+      window.reborn?.setInteractive?.(isInteractiveTarget(hit))
     }
     const onKey = (event: KeyboardEvent) => {
       if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'd') {
@@ -48,9 +52,26 @@ export function App() {
     }
   }, [userId])
 
+  useEffect(() => {
+    if (!menu || !manageApps) return
+    // Refresh on open so the list reflects grants from this backend session, not stale widget state.
+    void listAppApprovals().then(setApprovedApps).catch(() => setApprovedApps([]))
+  }, [menu, manageApps])
+
   async function begin(nextGoal: string) {
     setError('')
+    setNotice('')
     try {
+      // Explicit browser commands bypass paper research; all other input keeps using the mission flow.
+      const command = await executeCommand(nextGoal)
+      if (command.handled) {
+        setMissionId(null)
+        setNotice(command.message ?? 'Command completed')
+        setGoal('')
+        setAsking(false)
+        setMenu(false)
+        return
+      }
       const id = await createMission(nextGoal, userId ?? undefined)
       setMissionId(id)
       setAsking(false)
@@ -60,13 +81,29 @@ export function App() {
     }
   }
 
-  const pendingConfirm = bundle?.events.at(-1)?.type === 'confirm_needed' ? bundle.events.at(-1) : null
+  // Read approval state from mission data so later observer events cannot bury the prompt.
+  const pendingConfirm = bundle?.world_state?.state.pending_confirmation ?? null
 
   return (
     <main className="stage">
+      <button
+        type="button"
+        className="close-button"
+        data-interactive="true"
+        aria-label="Close REBORN"
+        title="Close REBORN"
+        onClick={() => window.reborn?.quit?.()}
+      >
+        ×
+      </button>
+      {demo ? (
+        // The badge distinguishes canned demo responses from live research after the fallback path runs.
+        <div className="demo-badge" role="status">DEMO MODE · Canned research responses</div>
+      ) : null}
       <div className="ground">
         {character.speech ? <Speech text={character.speech} /> : null}
         <div
+          data-interactive="true"
           onClick={() => setAsking(true)}
           onContextMenu={(event) => {
             event.preventDefault()
@@ -98,10 +135,15 @@ export function App() {
             }}
           >
             <label>
-              What do you want to learn?
-              <input value={goal} onChange={(event) => setGoal(event.target.value)} autoFocus />
+              What should I do?
+              <input
+                value={goal}
+                onChange={(event) => setGoal(event.target.value)}
+                placeholder="Open YouTube or learn about transformers"
+                autoFocus
+              />
             </label>
-            <button type="submit">Start</button>
+            <button type="submit">Go</button>
           </form>
         ) : null}
         {menu ? (
@@ -112,6 +154,28 @@ export function App() {
             <button type="button" onClick={() => void begin(DEMO_GOAL)}>
               Demo mode
             </button>
+            {missionId ? (
+              // Expose cancellation in the same menu used to control a running mission.
+              <button type="button" onClick={() => void cancelMission(missionId)}>
+                Cancel mission
+              </button>
+            ) : null}
+            <button type="button" onClick={() => setManageApps((value) => !value)}>
+              {manageApps ? 'Hide app access' : 'App access'}
+            </button>
+            {manageApps ? (
+              <section className="app-access" aria-label="Approved app access">
+                {approvedApps.length ? approvedApps.map((appName) => (
+                  <p key={appName}>
+                    {appName} allowed this session
+                    <button type="button" onClick={() => {
+                      // Remove the backend grant first; update the visible list only after revocation succeeds.
+                      void revokeAppApproval(appName).then(() => setApprovedApps((current) => current.filter((item) => item !== appName)))
+                    }}>Revoke</button>
+                  </p>
+                )) : <p>No extra app access is approved.</p>}
+              </section>
+            ) : null}
             <button
               type="button"
               onClick={() => {
@@ -126,6 +190,7 @@ export function App() {
           </nav>
         ) : null}
         {error ? <p className="speech">{error}</p> : null}
+        {notice ? <p className="speech" role="status">{notice}</p> : null}
       </div>
       {demo ? (
         <AnimationTester
@@ -137,7 +202,7 @@ export function App() {
           onRandom={character.setRandomIdle}
         />
       ) : null}
-      {bundle ? (
+      {bundle && missionId ? (
         <ResearchPath
           bundle={bundle}
           onNext={() => {
@@ -146,15 +211,10 @@ export function App() {
         />
       ) : null}
       {pendingConfirm && missionId ? (
-        <div className="modal">
-          {pendingConfirm.message}
-          <button type="button" onClick={() => void chooseConfirm(missionId, true)}>
-            Approve
-          </button>
-          <button type="button" onClick={() => void chooseConfirm(missionId, false)}>
-            Reject
-          </button>
-        </div>
+        <ConfirmDialog
+          message={pendingConfirm}
+          onChoose={(approved) => void chooseConfirm(missionId, approved)}
+        />
       ) : null}
     </main>
   )

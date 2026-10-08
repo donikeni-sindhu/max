@@ -39,7 +39,7 @@ create table public.missions (
   goal text not null,
   target_title text,
   status text not null default 'created'
-    check (status in ('created', 'planning', 'researching', 'learning', 'complete', 'failed')),
+    check (status in ('created', 'planning', 'researching', 'learning', 'complete', 'failed', 'cancelled')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

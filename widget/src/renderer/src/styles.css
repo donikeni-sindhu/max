@@ -17,12 +17,49 @@ button, input {
 }
 
 .stage {
+  position: relative;
   height: 100%;
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   gap: 16px;
   padding: 12px 20px 8px;
+}
+
+.close-button {
+  position: absolute;
+  top: 10px;
+  right: 16px;
+  z-index: 10;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 50%;
+  background: rgba(16, 17, 20, 0.9);
+  color: #f4f1ea;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.close-button:hover {
+  background: #a93f48;
+}
+
+/* Keep demo state visible above the transparent desktop overlay so canned output is never mistaken for live work. */
+.demo-badge {
+  position: absolute;
+  top: 14px;
+  left: 20px;
+  z-index: 9;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(124, 75, 20, 0.94);
+  color: #fff1cc;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
 
 .ground {
@@ -157,7 +194,7 @@ button, input {
 .confetti i:nth-child(2) { top: -16px; left: 40px; }
 .confetti i:nth-child(3) { top: -8px; right: 16px; background: #ffb4a8; }
 
-.speech, .ask, .menu, .panel, .modal {
+.speech, .ask, .menu, .panel, .modal, .confirm {
   background: rgba(16, 17, 20, 0.92);
   border-radius: 16px;
 }
@@ -190,7 +227,7 @@ button, input {
   padding: 8px;
 }
 
-.menu button, .ask button, .panel button, .modal button {
+.menu button, .ask button, .panel button, .modal button, .confirm button {
   border: 0;
   border-radius: 999px;
   padding: 8px 12px;
@@ -241,6 +278,41 @@ button, input {
 .path .done { color: #d7ffb0; }
 .arrow { font-size: 12px; }
 
+.action-log {
+  max-height: 112px;
+  overflow: auto;
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 4px;
+  color: #d5d0c6;
+  font-size: 12px;
+}
+
+.app-access {
+  max-height: 180px;
+  overflow: auto;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 12px;
+}
+
+.app-access p {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 4px 0;
+}
+
+.command-result {
+  margin: 0;
+  padding: 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
 .complete {
   padding: 8px;
   border-radius: 12px;
@@ -255,7 +327,7 @@ pre, .debug {
   color: #d5d0c6;
 }
 
-.modal {
+.modal, .confirm {
   position: absolute;
   left: 50%;
   bottom: 24px;
