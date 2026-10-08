@@ -5,7 +5,7 @@ export const DEMO_GOAL = "I want to understand the paper 'Attention Is All You N
 // Centralizing requests prevents one UI feature from accidentally omitting the launch credential.
 export function apiFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers)
-  headers.set('X-REBORN-Token', import.meta.env.VITE_REBORN_TOKEN ?? '')
+  headers.set('X-REBORN-Token', window.reborn?.token || import.meta.env.VITE_REBORN_TOKEN || '')
   return fetch(input, { ...init, headers })
 }
 

@@ -20,6 +20,7 @@ interface ImportMeta {
 interface Window {
   reborn?: {
     platform: string
+    token?: string
     setInteractive?: (interactive: boolean) => void
     quit?: () => void
   }
