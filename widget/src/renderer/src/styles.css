@@ -27,17 +27,83 @@ button, input {
 
 .ground {
   position: relative;
-  width: 280px;
-  height: 220px;
+  width: 320px;
+  height: 270px;
 }
 
 .actor {
   position: absolute;
-  left: 40px;
-  bottom: 8px;
-  width: 120px;
-  height: 110px;
+  left: 8px;
+  bottom: 0;
   cursor: grab;
+  touch-action: none;
+}
+
+.sprite {
+  transform-origin: bottom center;
+  line-height: 0;
+}
+
+.frame {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  display: block;
+  pointer-events: none;
+  user-select: none;
+}
+
+.particle {
+  position: absolute;
+  top: 4px;
+  right: 18px;
+  font-size: 22px;
+  line-height: 1;
+  pointer-events: none;
+  animation: float var(--particle-ms) ease-in-out infinite;
+}
+
+.particle.heart { color: #ff6b8a; }
+.particle.spark { color: #ffe56a; }
+.particle.zzz, .particle.dots, .particle.mark { color: #1b1d22; font-weight: 700; }
+
+@keyframes float {
+  from { transform: translateY(8px); opacity: 0.35; }
+  to { transform: translateY(-18px); opacity: 1; }
+}
+
+.tester {
+  position: absolute;
+  right: 16px;
+  bottom: 12px;
+  width: min(640px, 58vw);
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  background: rgba(16, 17, 20, 0.88);
+  border-radius: 12px;
+  z-index: 3;
+}
+
+.tester-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.tester button {
+  border: 0;
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: #f4f1ea;
+  color: #17181c;
+  font-size: 11px;
+}
+
+.tester-fps {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
 }
 
 .blob {
@@ -98,8 +164,8 @@ button, input {
 
 .speech {
   position: absolute;
-  left: 120px;
-  top: 12px;
+  left: 200px;
+  top: 8px;
   margin: 0;
   padding: 10px 12px;
   max-width: 220px;

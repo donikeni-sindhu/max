@@ -1,6 +1,8 @@
-import { useEffect, useReducer, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Character } from './character/Character'
-import { initialCharacter, reduceCharacter } from './character/machine'
+import { useCharacterMachine } from '../../character/useCharacterMachine'
+import { AnimationTester } from '../../dev/AnimationTester'
+import { BASE_FPS } from '../../character/animations.config'
 import { useCharacterState } from './hooks/useCharacterState'
 import { useMission } from './hooks/useMission'
 import { createMission, DEMO_GOAL, replayMission } from './lib/api'
@@ -14,30 +16,18 @@ export function App() {
   const [goal, setGoal] = useState('')
   const [menu, setMenu] = useState(false)
   const [error, setError] = useState('')
-  const [character, dispatch] = useReducer(reduceCharacter, initialCharacter)
   const { bundle } = useMission(missionId)
   const remote = useCharacterState(
     userId,
     bundle?.character?.animation ?? null,
     bundle?.character?.speech ?? '',
   )
+  const character = useCharacterMachine(remote)
+  const demo = import.meta.env.VITE_DEMO_MODE === 'true'
 
   useEffect(() => {
     void signInAnonymously().then((id) => setUserId(id))
   }, [])
-
-  useEffect(() => {
-    if (!remote) return
-    dispatch({ type: 'remote', animation: remote.animation, speech: remote.speech })
-  }, [remote?.animation, remote?.speech])
-
-  useEffect(() => {
-    const timer = window.setTimeout(
-      () => dispatch({ type: 'idle' }),
-      3000 + Math.random() * 5000,
-    )
-    return () => window.clearTimeout(timer)
-  }, [character.animation, character.paused])
 
   useEffect(() => {
     const onMove = (event: MouseEvent) => {
@@ -75,7 +65,7 @@ export function App() {
   return (
     <main className="stage">
       <div className="ground">
-        {bundle ? <Speech text={character.speech} /> : null}
+        {character.speech ? <Speech text={character.speech} /> : null}
         <div
           onClick={() => setAsking(true)}
           onContextMenu={(event) => {
@@ -85,8 +75,17 @@ export function App() {
         >
           <Character
             animation={character.animation}
+            flipX={character.flipX}
             x={character.x}
-            onDragX={(x) => dispatch({ type: 'move', x })}
+            playId={character.playId}
+            oneshot={character.oneshot}
+            dropping={character.dropping}
+            dragging={character.dragging}
+            fps={character.fps}
+            onClipDone={character.onClipDone}
+            onLanded={character.onLanded}
+            onDragStart={character.onDragStart}
+            onDragEnd={character.onDragEnd}
           />
         </div>
         {asking ? (
@@ -107,7 +106,7 @@ export function App() {
         ) : null}
         {menu ? (
           <nav className="menu" data-interactive="true">
-            <button type="button" onClick={() => dispatch({ type: 'pause' })}>
+            <button type="button" onClick={() => character.togglePause()}>
               {character.paused ? 'Resume' : 'Pause'}
             </button>
             <button type="button" onClick={() => void begin(DEMO_GOAL)}>
@@ -128,6 +127,16 @@ export function App() {
         ) : null}
         {error ? <p className="speech">{error}</p> : null}
       </div>
+      {demo ? (
+        <AnimationTester
+          names={character.names}
+          fps={character.fps ?? BASE_FPS}
+          randomIdle={character.randomIdle}
+          onPlay={character.play}
+          onFps={character.setFps}
+          onRandom={character.setRandomIdle}
+        />
+      ) : null}
       {bundle ? (
         <ResearchPath
           bundle={bundle}

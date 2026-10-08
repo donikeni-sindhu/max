@@ -16,5 +16,5 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src/renderer/src/**/*", "src/character/**/*"]
+  "include": ["src/renderer/src/**/*", "src/character/**/*", "src/dev/**/*"]
 }

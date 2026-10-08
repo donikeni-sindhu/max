@@ -46,6 +46,7 @@ export function runtimeEnv() {
         fromFile.VITE_SUPABASE_ANON_KEY ||
         fromFile.SUPABASE_ANON_KEY ||
         '',
+      VITE_DEMO_MODE: process.env.VITE_DEMO_MODE || fromFile.VITE_DEMO_MODE || fromFile.DEMO_MODE || '',
     },
   }
 }
