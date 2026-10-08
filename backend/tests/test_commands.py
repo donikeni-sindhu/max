@@ -10,6 +10,18 @@ class ParseOpenCommandTests(unittest.TestCase):
         # A bare well-known name should resolve to the canonical homepage users expect.
         self.assertEqual(parse_open_command("open youtube"), "https://www.youtube.com/")
 
+    def test_opens_youtube_search_for_a_compound_video_request(self):
+        self.assertEqual(
+            parse_open_command("open youtube and open 3blue1brown video"),
+            "https://www.youtube.com/results?search_query=3blue1brown",
+        )
+
+    def test_supports_playing_a_named_video_search(self):
+        self.assertEqual(
+            parse_open_command('Please go to YouTube and play "The Egg" video.'),
+            "https://www.youtube.com/results?search_query=The+Egg",
+        )
+
     def test_accepts_polite_site_command(self):
         self.assertEqual(parse_open_command("Please go to youtube.com."), "https://www.youtube.com/")
 
@@ -35,6 +47,15 @@ class ParseOpenCommandTests(unittest.TestCase):
         self.assertEqual(result["url"], "https://www.youtube.com/")
         self.assertTrue(result["handled"])
         open_url.assert_called_once_with("https://www.youtube.com/")
+
+    def test_command_endpoint_routes_compound_video_request_to_youtube_search(self):
+        search_url = "https://www.youtube.com/results?search_query=3blue1brown"
+        with patch("app.routes.commands.chrome.open_url", return_value={"ok": True}) as open_url:
+            result = execute_command(CommandRequest(command="open youtube and open 3blue1brown video"))
+
+        self.assertTrue(result["handled"])
+        self.assertEqual(result["url"], search_url)
+        open_url.assert_called_once_with(search_url)
 
     def test_command_endpoint_leaves_learning_goals_unhandled(self):
         with patch("app.routes.commands.chrome.open_url") as open_url:

@@ -9,6 +9,7 @@ from uuid import UUID
 
 from app import db
 from app.agent import chat, intent, launcher, learning_path, mission_control, paper_analyzer, pdf_reader, planner, prerequisites, web_research
+from app.agent.commands import parse_open_command
 from app.agent.demo_data import CONCEPTS, DEMO_GOAL, PAPER_PDF, PAPER_TITLE, RESOURCES
 from app.agent.events import emit
 from app.agent.uia import chrome, executor, observer
@@ -71,6 +72,18 @@ def run(mission_id: UUID, goal: str, reserved: bool = False) -> None:
 def _run_once(mission_id: UUID, goal: str) -> None:
     _check_cancelled(mission_id)
     db.update_mission(mission_id, status="planning", goal=goal)
+    # Route explicit site commands before asking either model to classify or act on them.
+    # Otherwise a model can pass the whole sentence to the app launcher as an app name.
+    direct_url = parse_open_command(goal)
+    if direct_url:
+        _check_cancelled(mission_id)
+        db.update_mission(mission_id, status="researching")
+        opened = chrome.open_url(direct_url, mission_id)
+        if not opened.get("ok"):
+            raise RuntimeError(str(opened.get("detail") or f"Could not open {direct_url}"))
+        emit(mission_id, "command_done", f"Opened {direct_url}", {"goal": goal, "url": direct_url})
+        db.update_mission(mission_id, status="complete")
+        return
     parsed = intent.parse_goal(mission_id, goal)
     _check_cancelled(mission_id)
     # Open apps through the verified strategy ladder rather than asking UIA to find a missing app window.

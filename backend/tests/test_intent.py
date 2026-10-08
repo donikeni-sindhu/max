@@ -47,6 +47,10 @@ class IntentTests(unittest.TestCase):
         result = _fallback("open youtube")
         self.assertEqual(result.goal_type, "ui_command")
 
+    def test_open_youtube_and_video_stays_a_browser_command(self):
+        result = _fallback("open youtube and open 3blue1brown video")
+        self.assertEqual(result.goal_type, "ui_command")
+
     def test_model_classification_is_returned_instead_of_forced_to_paper(self):
         model_result = IntentResult(goal_type="chat", response="A short answer")
         with (

@@ -62,9 +62,13 @@ def _chrome_hwnd() -> int:
             return
         if "chrome-profile" in command:
             preferred.append(handle)
+        else:
+            # A user may already have Chrome open with their normal profile; it is still a valid
+            # visible browser target when the dedicated REBORN profile has no window.
+            fallback.append(handle)
 
     win32gui.EnumWindows(visit, None)
-    return preferred[0] if preferred else 0
+    return preferred[0] if preferred else (fallback[0] if fallback else 0)
 
 
 def _chrome_window() -> dict[str, Any]:
@@ -114,6 +118,7 @@ def launch_chrome(url: str | None = None, mission_id: Any = None) -> dict[str, A
         "--no-first-run",
         "--no-default-browser-check",
         f"--user-data-dir={profile_dir()}",
+        "--new-window",
     ]
     if url:
         command.append(url)
